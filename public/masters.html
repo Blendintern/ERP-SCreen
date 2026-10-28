@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ERP - Saved Masters</title>
+<style>
+  :root{--bg:#B7C6DE;--gold1:#FBEBAE;--gold2:#E9C567;--navy:#14213D;--navy2:#1E2E52;--inb:#8592AC;--text:#1B2440;--paper:#EEF0EE;--err:#B3412E;--errbg:#F7E1DC;--ok:#1F7A6B;--okbg:#DDF0EA;--muted:#5A6577;}
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--paper);color:#1B1F27;font-family:'Segoe UI',Tahoma,system-ui,sans-serif;font-size:14px;}
+  header{background:var(--navy);color:#fff;padding:13px 26px;display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;border-bottom:3px solid var(--gold2);}
+  header h1{font-size:17px;margin:0;font-weight:600;} header span{font-size:12.5px;color:#B6C0DA;}
+  header a{color:#fff;font-size:12.5px;text-decoration:underline;}
+  main{max-width:1100px;margin:0 auto;padding:18px 16px 40px;}
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px;}
+  .toolbar input[type=text],.toolbar select{padding:7px 9px;border:1px solid var(--inb);background:#fff;font-size:13px;font-family:inherit;color:var(--text);}
+  .toolbar input[type=text]{min-width:240px;}
+  .btn{background:var(--navy);color:#fff;border:0;padding:8px 16px;font-size:13px;font-weight:600;border-radius:2px;cursor:pointer;font-family:inherit;text-decoration:none;display:inline-block;}
+  .btn:hover{background:var(--navy2);} .btn.ghost{background:#fff;color:var(--navy);border:1px solid var(--navy);} .btn.danger{background:var(--err);} .btn.danger:hover{background:#8f3222;}
+  .btn.small{padding:4px 10px;font-size:12px;}
+  table{width:100%;border-collapse:collapse;background:#fff;box-shadow:2px 3px 8px rgba(0,0,0,.1);}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #E2E6EC;font-size:13px;}
+  th{background:var(--navy);color:#fff;font-weight:600;font-size:12.5px;}
+  tr:hover td{background:#F5F7FA;}
+  .empty{padding:30px;text-align:center;color:var(--muted);}
+  .pager{display:flex;gap:10px;align-items:center;margin-top:14px;font-size:13px;color:var(--muted);}
+  .msg{padding:10px 14px;margin-bottom:12px;font-size:13px;}
+  .msg.err{background:var(--errbg);color:var(--err);border-left:4px solid var(--err);}
+  .msg.ok{background:var(--okbg);color:var(--ok);border-left:4px solid var(--ok);}
+  .tag{display:inline-block;padding:1px 7px;border-radius:9px;font-size:11px;font-weight:600;background:#DCE3EF;color:var(--navy);}
+</style></head>
+<body>
+<header><h1>ERP &middot; Saved Masters</h1><span>Customer / Vendor masters stored on the server</span><a href="/index.html" style="margin-left:auto">&larr; New master</a></header>
+<main>
+  <div id="msg"></div>
+  <div class="toolbar">
+    <input type="text" id="q" placeholder="Search name, code or group...">
+    <select id="accountType">
+      <option value="">All account types</option>
+      <option>Debtor</option><option>Creditor</option><option>Income</option><option>Expense</option><option>Asset</option><option>Liability</option>
+    </select>
+    <button class="btn ghost" id="search">Search</button>
+    <a class="btn" href="/index.html" style="margin-left:auto">+ New master</a>
+  </div>
+  <table id="table">
+    <thead><tr><th>ID</th><th>Master Name</th><th>Account Type</th><th>Group</th><th>Code</th><th>Updated</th><th></th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <div id="empty" class="empty" hidden>No masters saved yet. <a href="/index.html">Create the first one</a>.</div>
+  <div class="pager">
+    <button class="btn ghost small" id="prev">&larr; Prev</button>
+    <span id="pageinfo"></span>
+    <button class="btn ghost small" id="next">Next &rarr;</button>
+  </div>
+</main>
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  let page = 1; const pageSize = 20;
+
+  function fmtDate(iso){ try { return new Date(iso).toLocaleString(); } catch(e) { return iso; } }
+
+  async function load(){
+    const params = new URLSearchParams({page, pageSize});
+    if ($("q").value.trim()) params.set("q", $("q").value.trim());
+    if ($("accountType").value) params.set("accountType", $("accountType").value);
+    $("msg").replaceChildren();
+    let data;
+    try {
+      const res = await fetch("/api/masters?" + params.toString());
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      data = await res.json();
+    } catch (e) {
+      const d = document.createElement("div"); d.className = "msg err"; d.textContent = "Could not load masters: " + e.message; $("msg").append(d);
+      return;
+    }
+    const tbody = $("rows"); tbody.replaceChildren();
+    $("empty").hidden = data.items.length > 0;
+    $("table").hidden = data.items.length === 0;
+    data.items.forEach(m => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${m.id}</td><td>${esc(m.masterName)}</td><td><span class="tag">${esc(m.accountType)}</span></td>` +
+        `<td>${esc(m.groupName || "")}</td><td>${esc(m.code || "")}</td><td>${fmtDate(m.updatedAt)}</td><td></td>`;
+      const actions = document.createElement("td");
+      const edit = document.createElement("a"); edit.className = "btn ghost small"; edit.href = `/index.html?id=${m.id}`; edit.textContent = "Edit";
+      const del = document.createElement("button"); del.className = "btn danger small"; del.style.marginLeft = "6px"; del.textContent = "Delete";
+      del.addEventListener("click", () => remove(m.id, m.masterName));
+      actions.append(edit, del); tr.lastElementChild.replaceWith(actions);
+      tbody.append(tr);
+    });
+    const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
+    $("pageinfo").textContent = `Page ${data.page} of ${totalPages} (${data.total} total)`;
+    $("prev").disabled = data.page <= 1; $("next").disabled = data.page >= totalPages;
+  }
+
+  function esc(s){ const d = document.createElement("div"); d.textContent = s == null ? "" : String(s); return d.innerHTML; }
+
+  async function remove(id, name){
+    if (!confirm(`Delete master "${name || id}"? This cannot be undone.`)) return;
+    try {
+      const res = await fetch(`/api/masters/${id}`, {method: "DELETE"});
+      if (!res.ok && res.status !== 204) throw new Error(`Server returned ${res.status}`);
+      const d = document.createElement("div"); d.className = "msg ok"; d.textContent = `Deleted master #${id}.`; $("msg").replaceChildren(d);
+      load();
+    } catch (e) {
+      const d = document.createElement("div"); d.className = "msg err"; d.textContent = "Delete failed: " + e.message; $("msg").replaceChildren(d);
+    }
+  }
+
+  $("search").addEventListener("click", () => { page = 1; load(); });
+  $("q").addEventListener("keydown", e => { if (e.key === "Enter") { page = 1; load(); } });
+  $("accountType").addEventListener("change", () => { page = 1; load(); });
+  $("prev").addEventListener("click", () => { if (page > 1) { page--; load(); } });
+  $("next").addEventListener("click", () => { page++; load(); });
+  load();
+})();
+</script>
+</body></html>
