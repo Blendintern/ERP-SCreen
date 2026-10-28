@@ -39,12 +39,13 @@
   @media (max-width:700px){.row{grid-template-columns:1fr;gap:3px;}.row>label{padding-top:0;}.fields{min-height:0;}}
 </style></head>
 <body>
-<header><h1>ERP &middot; Master Creation</h1><span>Customer / Vendor master &middot; with the requested changes</span></header>
+<header><h1>ERP &middot; Master Creation</h1><span>Customer / Vendor master &middot; with the requested changes</span><a href="/masters.html" style="margin-left:auto;color:#fff;font-size:12.5px;text-decoration:underline">View all masters &rarr;</a></header>
 <main>
   <p class="legend"><span class="new" style="margin:0 6px 0 0">NEW</span> marks a field from the change request (Alternative Name, Marketing Head, the Shipping Body tab, and the Preferences fields).
     <span class="req">*</span> A <span class="req">red star</span> means the field must be filled (<b id="reqcount">0</b> fields right now). <b>Every account</b> needs the basic details; choose Account Type = <b>Debtor</b> and more fields get a star. A field with no star is not needed for this account. Press <b>Enter</b> to move to the next field, <b>Ctrl+Enter</b> to accept.</p>
   <div class="actions" style="margin-top:0"><button class="btn ghost" id="example" type="button">Fill a debtor example</button><button class="btn ghost" id="creditor" type="button">Fill a creditor example</button><button class="btn ghost" id="clear" type="button">Clear</button></div>
   <div id="banner" class="banner" role="status"></div>
+  <div id="editnotice" class="banner" role="status" hidden style="background:#DCE3EF;border-left:4px solid var(--navy);padding:9px 14px;font-size:13px"></div>
   <div class="window">
     <div class="titlebar"><span>Master Creation</span><span>Customer / Vendor</span></div>
     <div id="pages"></div>
@@ -24388,7 +24389,8 @@ for(const d of DIRECTOR_GROUPS) DIRECTOR_BY_KEY.set(refKey(d), d);
     Object.keys(F).forEach(id => { if (isRequired(id) && !get(id)) { say(id, "Required.", "err"); out.push({id, tab: F[id].tab, label: F[id].label, why: "must be filled."}); } });
     updateBadges(); return out;
   }
-  function accept(){
+  let editingId = null;
+  async function accept(){
     const box = $("banner"), probs = problems(); box.replaceChildren(); $("saved").hidden = true;
     if (probs.length) {
       box.className = "banner bad"; const h = document.createElement("b"); h.textContent = `Cannot accept yet: ${probs.length} thing${probs.length === 1 ? "" : "s"} to put right.`; box.append(h);
@@ -24396,14 +24398,66 @@ for(const d of DIRECTOR_GROUPS) DIRECTOR_BY_KEY.set(refKey(d), d);
       if (probs.length > 10) { const li = document.createElement("li"); li.textContent = `...and ${probs.length - 10} more. Every field still to fill is marked in red; each tab shows how many.`; ul.append(li); }
       box.append(ul); box.scrollIntoView({block: "nearest"}); return;
     }
-    box.className = "banner ok"; box.textContent = "Accepted. The record is shown below.";
     const rec = {}; TABS.forEach(t => t.fields.forEach(f => { const v = get(f.id); if (v) rec[f.id] = v; }));
+
+    const acceptBtn = $("accept"); acceptBtn.disabled = true;
+    let saved = null, saveError = null;
+    try {
+      const res = await fetch(editingId ? `/api/masters/${editingId}` : "/api/masters", {
+        method: editingId ? "PUT" : "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(rec),
+      });
+      if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.error || `Server returned ${res.status}`); }
+      saved = await res.json();
+      editingId = saved.id;
+    } catch (e) { saveError = e.message || String(e); }
+    acceptBtn.disabled = false;
+
+    if (saved) {
+      box.className = "banner ok";
+      box.textContent = `Accepted and saved as master #${saved.id}. The record is shown below.`;
+    } else {
+      box.className = "banner bad";
+      box.textContent = `Accepted, but saving to the server failed: ${saveError}. The record below was not stored — copy or download it before leaving this page.`;
+    }
+    rec.id = editingId || undefined;
     $("json").value = JSON.stringify(rec, null, 2);
     const tb = $("savedrows"); tb.replaceChildren(); TABS.forEach(t => t.fields.forEach(f => { if (rec[f.id] === undefined) return; const tr = document.createElement("tr"); const a = document.createElement("td"), b = document.createElement("td"), c = document.createElement("td"); a.textContent = t.title; b.textContent = f.label; c.textContent = f.optlabels && f.optlabels[rec[f.id]] ? `${rec[f.id]} (${f.optlabels[rec[f.id]]})` : rec[f.id]; tr.append(a, b, c); tb.append(tr); }));
     $("saved").hidden = false; $("saved").scrollIntoView({block: "nearest"});
   }
+  async function loadForEdit(id){
+    const notice = $("editnotice");
+    try {
+      const res = await fetch(`/api/masters/${id}`);
+      if (!res.ok) throw new Error(res.status === 404 ? "That master no longer exists." : `Server returned ${res.status}`);
+      const rec = await res.json();
+      clearAll();
+      Object.keys(F).forEach(k => { if (rec[k] !== undefined) set(k, rec[k]); });
+      applyAccountType();
+      // TypeofIndustry/MarketingHead are independent and already set correctly above; but
+      // Application, MarketSegment, SalesMan and Executive are populated into <select> option
+      // lists dynamically (see rebuildLists/rebuildExecutives), so setting their saved value
+      // before those lists exist silently fails. Rebuild the lists, then re-apply the values.
+      rebuildLists();
+      if (rec.MarketSegment !== undefined) set("MarketSegment", rec.MarketSegment);
+      if (rec.Application !== undefined) set("Application", rec.Application);
+      rebuildLists();
+      rebuildExecutives();
+      if (rec.SalesMan !== undefined) set("SalesMan", rec.SalesMan);
+      if (rec.Executive !== undefined) set("Executive", rec.Executive);
+      editingId = rec.id;
+      refreshStars(); updateBadges(); showTab(TABS[0].id);
+      notice.hidden = false; notice.textContent = `Editing master #${rec.id} (${rec.MasterName || "unnamed"}). Accept will update this record.`;
+    } catch (e) {
+      notice.hidden = false; notice.className = "banner bad"; notice.style.borderColor = "var(--err)"; notice.style.background = "var(--errbg)";
+      notice.textContent = `Could not load that master: ${e.message}`;
+    }
+  }
   function defaults(){ Object.values(F).forEach(f => { if (f.default !== undefined) set(f.id, f.default); }); }
-  function clearAll(){ TABS.forEach(t => t.fields.forEach(f => { set(f.id, ""); say(f.id, ""); })); defaults(); rebuildLists(); rebuildExecutives(); updateBadges(); refreshStars(); $("banner").replaceChildren(); $("banner").className = "banner"; $("saved").hidden = true; applyAccountType(); showTab(TABS[0].id); $("f-MasterName").focus(); }
+  function clearAll(){ TABS.forEach(t => t.fields.forEach(f => { set(f.id, ""); say(f.id, ""); })); defaults(); rebuildLists(); rebuildExecutives(); updateBadges(); refreshStars(); $("banner").replaceChildren(); $("banner").className = "banner"; $("saved").hidden = true; applyAccountType(); showTab(TABS[0].id); $("f-MasterName").focus();
+    editingId = null; const en = $("editnotice"); en.hidden = true; en.className = "banner"; en.style.borderColor = "var(--navy)"; en.style.background = "#DCE3EF";
+    if (location.search) history.replaceState(null, "", location.pathname); }
   function exampleCreditor(){
     clearAll();
     const v = {MasterName: "Sunrise Chemicals Pvt Ltd", AlternativeName: "Sunrise Chem", ShortName: "Sunrise", GroupName: "Sundry Creditors", AccountType: "Creditor", MasterType: "CreditorsAccount",
@@ -24436,7 +24490,9 @@ for(const d of DIRECTOR_GROUPS) DIRECTOR_BY_KEY.set(refKey(d), d);
   });
   $("another").addEventListener("click", clearAll);
   defaults(); rebuildLists(); applyAccountType();
-  window.__erp = {get, set, accept, problems, rebuildLists, showTab, example, clearAll};
+  const editId = new URLSearchParams(location.search).get("id");
+  if (editId) loadForEdit(editId);
+  window.__erp = {get, set, accept, problems, rebuildLists, showTab, example, clearAll, loadForEdit};
 })();
 
 </script>
