@@ -1,6 +1,7 @@
 const path = require("path");
 const express = require("express");
 const mastersRouter = require("./masters");
+const adminRouter = require("./admin");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -9,6 +10,7 @@ app.use(express.json({ limit: "1mb" }));
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 app.use("/api/masters", mastersRouter);
+app.use("/api/admin", adminRouter);
 
 app.use(express.static(path.join(__dirname, "..", "public")));
 
