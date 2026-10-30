@@ -5,22 +5,37 @@ if (!process.env.ADMIN_PASSWORD) {
   console.warn("ADMIN_PASSWORD is not set; using the insecure default 'admin123'. Set ADMIN_PASSWORD before deploying.");
 }
 
+// Sessions are a signed, stateless cookie (expiry + HMAC) rather than
+// server-side session storage, because Vercel runs each request in a
+// short-lived, possibly separate function instance - an in-memory session
+// map created at login would not be visible to the next request.
+const SESSION_SECRET = process.env.SESSION_SECRET || `${ADMIN_PASSWORD}:erp-admin-session`;
 const SESSION_COOKIE = "admin_session";
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
-const sessions = new Map(); // token -> expiresAt
 
-function createSession() {
-  const token = crypto.randomBytes(24).toString("hex");
-  sessions.set(token, Date.now() + SESSION_TTL_MS);
-  return token;
-}
-
-function destroySession(token) {
-  sessions.delete(token);
+function sign(expiresAt) {
+  return crypto.createHmac("sha256", SESSION_SECRET).update(String(expiresAt)).digest("hex");
 }
 
 function checkPassword(password) {
   return typeof password === "string" && password === ADMIN_PASSWORD;
+}
+
+function createSessionToken() {
+  const expiresAt = Date.now() + SESSION_TTL_MS;
+  return `${expiresAt}.${sign(expiresAt)}`;
+}
+
+function isValidToken(token) {
+  if (!token || typeof token !== "string") return false;
+  const dot = token.indexOf(".");
+  if (dot === -1) return false;
+  const expiresAt = Number(token.slice(0, dot));
+  const sig = token.slice(dot + 1);
+  if (!expiresAt || Date.now() > expiresAt || !sig) return false;
+  const expected = sign(expiresAt);
+  const a = Buffer.from(sig), b = Buffer.from(expected);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
 function parseCookies(req) {
@@ -39,16 +54,6 @@ function sessionTokenFrom(req) {
   return parseCookies(req)[SESSION_COOKIE];
 }
 
-function isValidSession(token) {
-  if (!token || !sessions.has(token)) return false;
-  const expiresAt = sessions.get(token);
-  if (Date.now() > expiresAt) {
-    sessions.delete(token);
-    return false;
-  }
-  return true;
-}
-
 function setSessionCookie(res, token) {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
   res.setHeader(
@@ -62,16 +67,15 @@ function clearSessionCookie(res) {
 }
 
 function requireAdmin(req, res, next) {
-  if (isValidSession(sessionTokenFrom(req))) return next();
+  if (isValidToken(sessionTokenFrom(req))) return next();
   res.status(401).json({ error: "Not logged in." });
 }
 
 module.exports = {
   checkPassword,
-  createSession,
-  destroySession,
+  createSessionToken,
   sessionTokenFrom,
-  isValidSession,
+  isValidToken,
   setSessionCookie,
   clearSessionCookie,
   requireAdmin,

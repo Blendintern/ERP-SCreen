@@ -1,12 +1,11 @@
 const express = require("express");
 const ExcelJS = require("exceljs");
-const db = require("./db");
+const store = require("./store");
 const {
   checkPassword,
-  createSession,
-  destroySession,
+  createSessionToken,
   sessionTokenFrom,
-  isValidSession,
+  isValidToken,
   setSessionCookie,
   clearSessionCookie,
   requireAdmin,
@@ -14,18 +13,12 @@ const {
 
 const router = express.Router();
 
-function rowToRecord(row) {
-  const data = JSON.parse(row.data);
-  return { id: row.id, createdAt: row.created_at, updatedAt: row.updated_at, ...data };
-}
-
 const PRIORITY_COLUMNS = ["id", "MasterName", "AccountType", "GroupName", "Code", "createdAt", "updatedAt"];
 
 // Builds one consistent column list across every record, even though records
 // can each have a different subset of fields filled in.
-function allRecordsWithColumns() {
-  const rows = db.prepare("SELECT * FROM masters ORDER BY id").all();
-  const records = rows.map(rowToRecord);
+async function allRecordsWithColumns() {
+  const records = await store.listAllFull();
   const keys = new Set();
   records.forEach((r) => Object.keys(r).forEach((k) => keys.add(k)));
   const rest = [...keys].filter((k) => !PRIORITY_COLUMNS.includes(k)).sort();
@@ -37,40 +30,43 @@ router.post("/login", (req, res) => {
   if (!checkPassword((req.body || {}).password)) {
     return res.status(401).json({ error: "Incorrect password." });
   }
-  setSessionCookie(res, createSession());
+  setSessionCookie(res, createSessionToken());
   res.json({ ok: true });
 });
 
 router.post("/logout", (req, res) => {
-  destroySession(sessionTokenFrom(req));
   clearSessionCookie(res);
   res.json({ ok: true });
 });
 
 router.get("/me", (req, res) => {
-  res.json({ loggedIn: isValidSession(sessionTokenFrom(req)) });
+  res.json({ loggedIn: isValidToken(sessionTokenFrom(req)) });
 });
 
 // Full data for every saved master, for the on-screen admin table.
-router.get("/masters", requireAdmin, (req, res) => {
-  const { records, columns } = allRecordsWithColumns();
-  res.json({ columns, records });
+router.get("/masters", requireAdmin, async (req, res, next) => {
+  try {
+    const { records, columns } = await allRecordsWithColumns();
+    res.json({ columns, records });
+  } catch (err) { next(err); }
 });
 
-router.get("/export.xlsx", requireAdmin, async (req, res) => {
-  const { records, columns } = allRecordsWithColumns();
+router.get("/export.xlsx", requireAdmin, async (req, res, next) => {
+  try {
+    const { records, columns } = await allRecordsWithColumns();
 
-  const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet("Masters");
-  sheet.columns = columns.map((c) => ({ header: c, key: c, width: Math.min(32, Math.max(10, c.length + 4)) }));
-  sheet.getRow(1).font = { bold: true };
-  records.forEach((r) => sheet.addRow(r));
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Masters");
+    sheet.columns = columns.map((c) => ({ header: c, key: c, width: Math.min(32, Math.max(10, c.length + 4)) }));
+    sheet.getRow(1).font = { bold: true };
+    records.forEach((r) => sheet.addRow(r));
 
-  const buffer = await workbook.xlsx.writeBuffer();
-  const filename = `erp-masters-${new Date().toISOString().slice(0, 10)}.xlsx`;
-  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-  res.send(Buffer.from(buffer));
+    const buffer = await workbook.xlsx.writeBuffer();
+    const filename = `erp-masters-${new Date().toISOString().slice(0, 10)}.xlsx`;
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(Buffer.from(buffer));
+  } catch (err) { next(err); }
 });
 
 module.exports = router;

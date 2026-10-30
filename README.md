@@ -3,7 +3,10 @@
 A Customer/Vendor master-creation screen for an ERP system, with full field
 validation (GSTIN/PAN/IFSC/PIN checks, director/executive matching, PAN-to-
 assessee-type inference, etc.) and a backend that persists every accepted
-record so it can be listed, edited and deleted later.
+record so it can be listed, edited and deleted later. Deployable as-is to
+either [Render](#deploying-to-render) (SQLite on a persistent disk) or
+[Vercel](#deploying-to-vercel) (hosted Postgres) — same code, same API,
+different storage underneath.
 
 ## Structure
 
@@ -14,9 +17,20 @@ record so it can be listed, edited and deleted later.
   Delete actions.
 - `public/admin.html` — password-protected admin view: every field of every
   saved master in one table, with an **Export to Excel** button.
-- `server/` — Express API + SQLite storage (`server/index.js`,
-  `server/db.js`, `server/masters.js`, `server/admin.js`, `server/adminAuth.js`).
-- `data/` — SQLite database file (created automatically; not committed).
+- `server/app.js` — the Express app (routes + static file serving), shared by
+  both deploy targets below.
+- `server/index.js` — entry point for Render/local dev: runs `app.js` as a
+  long-running process.
+- `api/index.js` — entry point for Vercel: the same `app.js`, run as a
+  serverless function (see `vercel.json`).
+- `server/store/` — the storage layer, swappable per deployment:
+  `sqlite.js` (local file, used on Render/local) or `postgres.js` (hosted
+  database, used on Vercel). `server/store/index.js` picks one automatically
+  based on whether `DATABASE_URL`/`POSTGRES_URL` is set. Every route goes
+  through this interface, never the database driver directly.
+- `server/masters.js`, `server/admin.js`, `server/adminAuth.js` — the routes.
+- `data/` — SQLite database file (created automatically on Render/local; not
+  committed, and not used at all on Vercel).
 
 ## Running locally
 
@@ -86,3 +100,37 @@ survives restarts and redeploys as long as the disk isn't deleted.
   URL can create, view, edit and delete masters. Only `/admin.html` (full
   data view + Excel export) is password-protected, via the `ADMIN_PASSWORD`
   environment variable.
+
+## Deploying to Vercel
+
+Vercel runs code as short-lived serverless functions with no persistent
+local disk, so the SQLite file used on Render won't work there — data would
+disappear on every redeploy. Instead, on Vercel this app uses a hosted
+Postgres database (see `server/store/postgres.js`).
+
+1. **Create a Postgres database.** Easiest: in your Vercel project →
+   **Storage** tab → **Create Database** → **Postgres**, then **Connect** it
+   to this project. That automatically sets a `POSTGRES_URL` environment
+   variable for you (or `DATABASE_URL`, which also works — either name is
+   read). Any other hosted Postgres (Neon, Supabase, etc.) works too; just
+   set its connection string as `DATABASE_URL` yourself.
+2. **Set `ADMIN_PASSWORD`** in the project's Environment Variables (Settings
+   → Environment Variables) — this is the login for `/admin.html`.
+3. (Optional) Set `SESSION_SECRET` to a random string. If you skip it, a
+   secret is derived from `ADMIN_PASSWORD`, which is fine for this tool but
+   a dedicated secret is slightly stronger.
+4. Import this repo into Vercel (**Add New** → **Project** → pick the repo).
+   Vercel detects `vercel.json` automatically — no build command needed.
+5. Deploy. The app is served the same way as on Render: form at `/`, masters
+   list at `/masters.html`, admin view at `/admin.html`, API under `/api/*`.
+
+### Notes
+
+- Each serverless invocation can land on a different instance, so the admin
+  login uses a signed, stateless cookie (expiry + HMAC, no server-side
+  session store) rather than an in-memory session — this is required for
+  Vercel to work at all, and it also makes the Render deployment slightly
+  more robust (a restart no longer logs everyone out early).
+- The very first request after a cold start runs a one-time
+  `CREATE TABLE IF NOT EXISTS` against Postgres; harmless, just adds a little
+  latency to that one request.
