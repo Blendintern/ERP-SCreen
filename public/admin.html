@@ -42,7 +42,8 @@
     <div class="toolbar">
       <input type="text" id="filter" placeholder="Filter rows...">
       <span class="count" id="count"></span>
-      <a class="btn" id="exportBtn" href="/api/admin/export.xlsx" style="margin-left:auto">Export to Excel</a>
+      <button class="btn" id="exportBtn" type="button" style="margin-left:auto">Export to Excel</button>
+      <span id="exportState" aria-live="polite" style="color:var(--muted);font-size:12.5px"></span>
       <button class="btn ghost" id="logoutBtn">Log out</button>
     </div>
     <div id="msg"></div>
@@ -113,8 +114,29 @@
     $("count").textContent = `${records.length} of ${allRecords.length} record${allRecords.length === 1 ? "" : "s"}`;
   }
 
+  async function exportExcel(){
+    const st = $("exportState");
+    st.textContent = "Preparing file...";
+    try {
+      const res = await fetch("/api/admin/export.xlsx");
+      if (res.status === 401) { st.textContent = "Your session expired - please log in again."; checkLogin(); return; }
+      if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.error || `Server returned ${res.status}`); }
+      const blob = await res.blob();
+      const match = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "");
+      const filename = match ? match[1] : "erp-masters.xlsx";
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = filename;
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      st.textContent = `Downloaded ${filename}.`;
+    } catch (e) {
+      st.textContent = "Export failed: " + e.message;
+    }
+  }
+
   $("loginBtn").addEventListener("click", login);
   $("password").addEventListener("keydown", e => { if (e.key === "Enter") login(); });
+  $("exportBtn").addEventListener("click", exportExcel);
   $("logoutBtn").addEventListener("click", logout);
   $("filter").addEventListener("input", () => {
     const q = $("filter").value.trim().toLowerCase();
