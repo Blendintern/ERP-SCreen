@@ -1,23 +1,8 @@
-const path = require("path");
-const express = require("express");
-const mastersRouter = require("./masters");
-const adminRouter = require("./admin");
-
-const app = express();
+// Entry point for Render and local development (a long-running process).
+// Vercel uses api/index.js instead, which imports the same app without
+// calling listen() - see server/app.js for the shared Express app.
+const app = require("./app");
 const PORT = process.env.PORT || 3000;
-
-app.use(express.json({ limit: "1mb" }));
-
-app.get("/api/health", (req, res) => res.json({ status: "ok" }));
-app.use("/api/masters", mastersRouter);
-app.use("/api/admin", adminRouter);
-
-app.use(express.static(path.join(__dirname, "..", "public")));
-
-// Any non-API route falls back to the SPA shell so deep links (e.g. /masters.html) work.
-app.get(/^(?!\/api\/).*/, (req, res) => {
-  res.sendFile(path.join(__dirname, "..", "public", "index.html"));
-});
 
 app.listen(PORT, () => {
   console.log(`ERP master screen listening on port ${PORT}`);
