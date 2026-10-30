@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ERP - Admin</title>
+<style>
+  :root{--bg:#B7C6DE;--gold1:#FBEBAE;--gold2:#E9C567;--navy:#14213D;--navy2:#1E2E52;--inb:#8592AC;--text:#1B2440;--paper:#EEF0EE;--err:#B3412E;--errbg:#F7E1DC;--ok:#1F7A6B;--okbg:#DDF0EA;--muted:#5A6577;}
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--paper);color:#1B1F27;font-family:'Segoe UI',Tahoma,system-ui,sans-serif;font-size:14px;}
+  header{background:var(--navy);color:#fff;padding:13px 26px;display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;border-bottom:3px solid var(--gold2);}
+  header h1{font-size:17px;margin:0;font-weight:600;} header span{font-size:12.5px;color:#B6C0DA;}
+  header a{color:#fff;font-size:12.5px;text-decoration:underline;}
+  main{max-width:1200px;margin:0 auto;padding:18px 16px 40px;}
+  .btn{background:var(--navy);color:#fff;border:0;padding:8px 16px;font-size:13px;font-weight:600;border-radius:2px;cursor:pointer;font-family:inherit;text-decoration:none;display:inline-block;}
+  .btn:hover{background:var(--navy2);} .btn.ghost{background:#fff;color:var(--navy);border:1px solid var(--navy);}
+  .login{max-width:360px;margin:60px auto;background:#fff;padding:26px 24px;box-shadow:2px 3px 10px rgba(0,0,0,.15);}
+  .login h2{margin:0 0 14px;font-size:16px;}
+  .login input{width:100%;padding:9px 10px;border:1px solid var(--inb);font-size:14px;margin-bottom:10px;font-family:inherit;}
+  .login .err{color:var(--err);font-size:12.5px;min-height:16px;margin-bottom:8px;}
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;}
+  .toolbar input[type=text]{padding:7px 9px;border:1px solid var(--inb);font-size:13px;font-family:inherit;min-width:260px;}
+  .count{color:var(--muted);font-size:12.5px;}
+  .tablewrap{overflow:auto;max-height:70vh;background:#fff;box-shadow:2px 3px 8px rgba(0,0,0,.1);}
+  table{border-collapse:collapse;width:100%;font-size:12.5px;white-space:nowrap;}
+  th,td{text-align:left;padding:6px 10px;border-bottom:1px solid #E2E6EC;border-right:1px solid #EEF0F4;}
+  th{background:var(--navy);color:#fff;position:sticky;top:0;font-size:11.5px;}
+  tr:hover td{background:#F5F7FA;}
+  .empty{padding:30px;text-align:center;color:var(--muted);}
+  .msg{padding:10px 14px;margin-bottom:12px;font-size:13px;}
+  .msg.err{background:var(--errbg);color:var(--err);border-left:4px solid var(--err);}
+  [hidden]{display:none!important;}
+</style></head>
+<body>
+<header><h1>ERP &middot; Admin</h1><span>All saved masters, every field</span><a href="/index.html" style="margin-left:auto">&larr; New master</a><a href="/masters.html">Masters list</a></header>
+<main>
+  <section id="loginView" class="login">
+    <h2>Admin login</h2>
+    <div id="loginErr" class="err"></div>
+    <input type="password" id="password" placeholder="Admin password" autocomplete="current-password">
+    <button class="btn" id="loginBtn" style="width:100%">Log in</button>
+  </section>
+
+  <section id="dataView" hidden>
+    <div class="toolbar">
+      <input type="text" id="filter" placeholder="Filter rows...">
+      <span class="count" id="count"></span>
+      <a class="btn" id="exportBtn" href="/api/admin/export.xlsx" style="margin-left:auto">Export to Excel</a>
+      <button class="btn ghost" id="logoutBtn">Log out</button>
+    </div>
+    <div id="msg"></div>
+    <div class="tablewrap">
+      <table id="table"><thead><tr id="headRow"></tr></thead><tbody id="rows"></tbody></table>
+    </div>
+    <div id="empty" class="empty" hidden>No masters saved yet.</div>
+  </section>
+</main>
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  let allRecords = [], allColumns = [];
+
+  function esc(s){ const d = document.createElement("div"); d.textContent = s == null ? "" : String(s); return d.innerHTML; }
+
+  async function checkLogin(){
+    const res = await fetch("/api/admin/me");
+    const { loggedIn } = await res.json();
+    $("loginView").hidden = loggedIn;
+    $("dataView").hidden = !loggedIn;
+    if (loggedIn) loadData();
+    else $("password").focus();
+  }
+
+  async function login(){
+    $("loginErr").textContent = "";
+    try {
+      const res = await fetch("/api/admin/login", {
+        method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({password: $("password").value}),
+      });
+      if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.error || "Login failed."); }
+      $("password").value = "";
+      checkLogin();
+    } catch (e) { $("loginErr").textContent = e.message; }
+  }
+
+  async function logout(){
+    await fetch("/api/admin/logout", {method: "POST"});
+    checkLogin();
+  }
+
+  async function loadData(){
+    $("msg").replaceChildren();
+    try {
+      const res = await fetch("/api/admin/masters");
+      if (res.status === 401) { checkLogin(); return; }
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      const data = await res.json();
+      allRecords = data.records; allColumns = data.columns;
+      renderTable(allRecords);
+    } catch (e) {
+      const d = document.createElement("div"); d.className = "msg err"; d.textContent = "Could not load data: " + e.message; $("msg").append(d);
+    }
+  }
+
+  function renderTable(records){
+    const headRow = $("headRow"); headRow.replaceChildren();
+    allColumns.forEach(c => { const th = document.createElement("th"); th.textContent = c; headRow.append(th); });
+    const tbody = $("rows"); tbody.replaceChildren();
+    records.forEach(r => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = allColumns.map(c => `<td>${esc(r[c])}</td>`).join("");
+      tbody.append(tr);
+    });
+    $("table").hidden = records.length === 0;
+    $("empty").hidden = records.length > 0;
+    $("count").textContent = `${records.length} of ${allRecords.length} record${allRecords.length === 1 ? "" : "s"}`;
+  }
+
+  $("loginBtn").addEventListener("click", login);
+  $("password").addEventListener("keydown", e => { if (e.key === "Enter") login(); });
+  $("logoutBtn").addEventListener("click", logout);
+  $("filter").addEventListener("input", () => {
+    const q = $("filter").value.trim().toLowerCase();
+    if (!q) return renderTable(allRecords);
+    renderTable(allRecords.filter(r => allColumns.some(c => String(r[c] ?? "").toLowerCase().includes(q))));
+  });
+
+  checkLogin();
+})();
+</script>
+</body></html>

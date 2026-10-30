@@ -13,3 +13,5 @@ services:
     envVars:
       - key: DATA_DIR
         value: /var/data
+      - key: ADMIN_PASSWORD
+        sync: false
