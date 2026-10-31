@@ -40,7 +40,11 @@ router.post("/logout", (req, res) => {
 });
 
 router.get("/me", (req, res) => {
-  res.json({ loggedIn: isValidToken(sessionTokenFrom(req)) });
+  const loggedIn = isValidToken(sessionTokenFrom(req));
+  const sheetUrl = process.env.GOOGLE_SHEET_ID
+    ? `https://docs.google.com/spreadsheets/d/${process.env.GOOGLE_SHEET_ID}/edit`
+    : null;
+  res.json({ loggedIn, sheetUrl: loggedIn ? sheetUrl : null });
 });
 
 // Full data for every saved master, for the on-screen admin table.

@@ -42,7 +42,8 @@
     <div class="toolbar">
       <input type="text" id="filter" placeholder="Filter rows...">
       <span class="count" id="count"></span>
-      <button class="btn" id="exportBtn" type="button" style="margin-left:auto">Export to Excel</button>
+      <a class="btn ghost" id="sheetLink" href="#" target="_blank" rel="noopener" style="margin-left:auto" hidden>Open in Google Sheets</a>
+      <button class="btn" id="exportBtn" type="button">Export to Excel</button>
       <span id="exportState" aria-live="polite" style="color:var(--muted);font-size:12.5px"></span>
       <button class="btn ghost" id="logoutBtn">Log out</button>
     </div>
@@ -62,9 +63,12 @@
 
   async function checkLogin(){
     const res = await fetch("/api/admin/me");
-    const { loggedIn } = await res.json();
+    const { loggedIn, sheetUrl } = await res.json();
     $("loginView").hidden = loggedIn;
     $("dataView").hidden = !loggedIn;
+    const link = $("sheetLink");
+    link.hidden = !sheetUrl;
+    if (sheetUrl) link.href = sheetUrl;
     if (loggedIn) loadData();
     else $("password").focus();
   }
