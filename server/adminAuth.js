@@ -5,10 +5,8 @@ if (!process.env.ADMIN_PASSWORD) {
   console.warn("ADMIN_PASSWORD is not set; using the insecure default 'admin123'. Set ADMIN_PASSWORD before deploying.");
 }
 
-// Sessions are a signed, stateless cookie (expiry + HMAC) rather than
-// server-side session storage, because Vercel runs each request in a
-// short-lived, possibly separate function instance - an in-memory session
-// map created at login would not be visible to the next request.
+// Sessions are a signed, stateless cookie (expiry + HMAC) rather than an
+// in-memory session map, so a restart or redeploy never logs everyone out.
 const SESSION_SECRET = process.env.SESSION_SECRET || `${ADMIN_PASSWORD}:erp-admin-session`;
 const SESSION_COOKIE = "admin_session";
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours

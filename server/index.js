@@ -1,6 +1,5 @@
-// Entry point for Render and local development (a long-running process).
-// Vercel uses api/index.js instead, which imports the same app without
-// calling listen() - see server/app.js for the shared Express app.
+// Entry point: runs the app (server/app.js) as a long-running process, on
+// Render or locally.
 const app = require("./app");
 const PORT = process.env.PORT || 3000;
 

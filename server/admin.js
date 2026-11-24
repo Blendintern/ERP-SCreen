@@ -40,7 +40,11 @@ router.post("/logout", (req, res) => {
 });
 
 router.get("/me", (req, res) => {
-  res.json({ loggedIn: isValidToken(sessionTokenFrom(req)) });
+  const loggedIn = isValidToken(sessionTokenFrom(req));
+  const sheetUrl = process.env.GOOGLE_SHEET_ID
+    ? `https://docs.google.com/spreadsheets/d/${process.env.GOOGLE_SHEET_ID}/edit`
+    : null;
+  res.json({ loggedIn, sheetUrl: loggedIn ? sheetUrl : null });
 });
 
 // Full data for every saved master, for the on-screen admin table.
@@ -66,6 +70,25 @@ router.get("/export.xlsx", requireAdmin, async (req, res, next) => {
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.send(Buffer.from(buffer));
+  } catch (err) { next(err); }
+});
+
+router.get("/export.csv", requireAdmin, async (req, res, next) => {
+  try {
+    const { records, columns } = await allRecordsWithColumns();
+
+    const csvField = (value) => {
+      const s = value === null || value === undefined ? "" : String(value);
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lines = [columns.map(csvField).join(",")];
+    records.forEach((r) => lines.push(columns.map((c) => csvField(r[c])).join(",")));
+    const csv = lines.join("\r\n") + "\r\n";
+
+    const filename = `erp-masters-${new Date().toISOString().slice(0, 10)}.csv`;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(csv);
   } catch (err) { next(err); }
 });
 
