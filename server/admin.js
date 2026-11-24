@@ -73,4 +73,23 @@ router.get("/export.xlsx", requireAdmin, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+router.get("/export.csv", requireAdmin, async (req, res, next) => {
+  try {
+    const { records, columns } = await allRecordsWithColumns();
+
+    const csvField = (value) => {
+      const s = value === null || value === undefined ? "" : String(value);
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lines = [columns.map(csvField).join(",")];
+    records.forEach((r) => lines.push(columns.map((c) => csvField(r[c])).join(",")));
+    const csv = lines.join("\r\n") + "\r\n";
+
+    const filename = `erp-masters-${new Date().toISOString().slice(0, 10)}.csv`;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(csv);
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

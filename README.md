@@ -27,7 +27,8 @@ link, and the Excel export are all views of the same data, not copies of it.
   `listAllFull`), never a spreadsheet client directly:
   - `googlesheets.js` — stores data in a Google Sheet via the Sheets API.
     Used whenever `GOOGLE_SHEET_ID` is set (the production path).
-  - `excel.js` — stores data in a local `data/masters.xlsx` file. Used when
+  - `excel.js` — stores data in a local `data/masters.xlsx` file, and mirrors
+    the same data into `data/masters.csv` on every write. Used when
     `GOOGLE_SHEET_ID` is not set, so `npm start` works immediately for local
     development without any Google setup.
 - `server/masters.js`, `server/admin.js`, `server/adminAuth.js` — the routes.
@@ -58,7 +59,8 @@ npm start
 ```
 
 No Google setup is needed for this — with `GOOGLE_SHEET_ID` unset, data
-saves to a local `data/masters.xlsx` file instead. Then open
+saves to a local `data/masters.xlsx` file (and a `data/masters.csv` mirror,
+kept in sync with it on every save) instead. Then open
 http://localhost:3000 — "Accept" saves the record, "View all masters" (top
 right) lists/edits/deletes records, and "Admin" opens the full-data view
 (password: set `ADMIN_PASSWORD` in your environment; defaults to `admin123`
@@ -89,6 +91,7 @@ checksum, etc.) runs in the browser before a save is attempted.
 | GET    | `/api/admin/me`         | `{loggedIn, sheetUrl}` — `sheetUrl` is set once logged in, if `GOOGLE_SHEET_ID` is configured |
 | GET    | `/api/admin/masters`    | Every field of every record (session required)  |
 | GET    | `/api/admin/export.xlsx`| Downloads everything as an .xlsx file (session required) |
+| GET    | `/api/admin/export.csv` | Downloads everything as a .csv file (session required)   |
 
 ## One-time Google Sheets setup
 

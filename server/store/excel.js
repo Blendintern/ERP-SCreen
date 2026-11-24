@@ -16,8 +16,23 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "..", "data"
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const FILE_PATH = path.join(DATA_DIR, "masters.xlsx");
 const TMP_PATH = FILE_PATH + ".tmp";
+const CSV_PATH = path.join(DATA_DIR, "masters.csv");
+const CSV_TMP_PATH = CSV_PATH + ".tmp";
 const SHEET_NAME = "Masters";
 const PRIORITY_COLUMNS = ["id", "MasterName", "AccountType", "GroupName", "Code", "createdAt", "updatedAt"];
+
+// Minimal RFC 4180 quoting: wrap a field in quotes (doubling any quotes
+// inside it) whenever it contains a comma, quote, or newline.
+function csvField(value) {
+  const s = value === null || value === undefined ? "" : String(value);
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function toCsv(columns, records) {
+  const lines = [columns.map(csvField).join(",")];
+  records.forEach((r) => lines.push(columns.map((c) => csvField(r[c])).join(",")));
+  return lines.join("\r\n") + "\r\n";
+}
 
 let chain = Promise.resolve();
 function enqueue(fn) {
@@ -66,6 +81,12 @@ async function saveAll(records) {
 
   await workbook.xlsx.writeFile(TMP_PATH);
   await fs.promises.rename(TMP_PATH, FILE_PATH);
+
+  // Mirror the same data into a plain .csv file alongside the .xlsx, kept
+  // in lockstep with it (same rename-on-write safety) so it's always a
+  // complete, consistent snapshot rather than something partially written.
+  await fs.promises.writeFile(CSV_TMP_PATH, toCsv(columns, records), "utf8");
+  await fs.promises.rename(CSV_TMP_PATH, CSV_PATH);
 }
 
 function toSummary(row) {

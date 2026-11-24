@@ -1,4 +1,6 @@
 node_modules/
 data/*.xlsx
 data/*.xlsx.tmp
+data/*.csv
+data/*.csv.tmp
 .env
